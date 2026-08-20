@@ -8,8 +8,8 @@ pipeline {
 
     environment {
 
-        IMAGE_NAME_API   = "tiktok_clone_back"
-        IMAGE_NAME_FRONT = "tiktok_clone_front"
+        IMAGE_NAME_API   = "alonaarz/iktok_clone_back"
+        IMAGE_NAME_FRONT = "alonaarz/tiktok_clone_front"
 
         COMPOSE_FILE    = "compose.local.yaml"
         COMPOSE_PROJECT = "tiktok-clone"
