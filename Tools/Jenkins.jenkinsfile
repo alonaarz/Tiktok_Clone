@@ -1,0 +1,208 @@
+#!groovy
+
+pipeline {
+    agent { label 'Agent001' }
+
+    environment {
+        IMAGE_NAME_API   = "tiktok_clone_back"
+        IMAGE_NAME_FRONT = "tiktok_clone_front"
+
+        COMPOSE_FILE = "Tools/compose.local.yaml"
+        COMPOSE_PROJECT = "tiktok-clone"
+    }
+
+    stages {
+
+        // ============================================================
+        // CHECKOUT
+        // ============================================================
+
+        stage("Checkout") {
+            steps {
+                checkout scm
+            }
+        }
+
+        // ============================================================
+        // PREPARE
+        // ============================================================
+
+        stage("Prepare") {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=============================================="
+                    echo "Preparing build"
+                    echo "=============================================="
+
+                    cd ${WORKSPACE}
+
+                    CURRENT_IP=$(curl -4 -s https://ifconfig.me)
+
+                    if [ -z "$CURRENT_IP" ]; then
+                        echo "ERROR: Could not determine public IP"
+                        exit 1
+                    fi
+
+                    echo "AWS Agent public IP: $CURRENT_IP"
+
+                    echo "$CURRENT_IP" > ${WORKSPACE}/aws_public_ip.txt
+                '''
+            }
+        }
+
+        // ============================================================
+        // BUILD BACKEND
+        // ============================================================
+
+        stage("Build Backend") {
+            steps {
+                sh '''
+                    set -e
+
+                    cd ${WORKSPACE}
+
+                    echo "=============================================="
+                    echo "Building backend Docker image"
+                    echo "=============================================="
+
+                    docker build \
+                        -t ${IMAGE_NAME_API}:${BUILD_NUMBER} \
+                        -t ${IMAGE_NAME_API}:latest \
+                        -f back/.dockerfile \
+                        back/
+                '''
+            }
+        }
+
+        // ============================================================
+        // BUILD FRONTEND
+        // ============================================================
+
+        stage("Build Frontend") {
+            steps {
+                sh '''
+                    set -e
+
+                    cd ${WORKSPACE}
+
+                    CURRENT_IP=$(cat aws_public_ip.txt)
+
+                    echo "=============================================="
+                    echo "Building frontend Docker image"
+                    echo "API URL: http://${CURRENT_IP}:8080"
+                    echo "=============================================="
+
+                    docker build \
+                        --build-arg NGINX_ENV=local \
+                        --build-arg VITE_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+                        --build-arg VITE_API_BASE_URL="http://${CURRENT_IP}:8080" \
+                        -t ${IMAGE_NAME_FRONT}:${BUILD_NUMBER} \
+                        -t ${IMAGE_NAME_FRONT}:latest \
+                        -f front/Dockerfile \
+                        front/
+                '''
+            }
+        }
+
+        // ============================================================
+        // DEPLOY
+        // ============================================================
+
+        stage("Deploy") {
+            steps {
+                sh '''
+                    set -e
+
+                    cd ${WORKSPACE}
+
+                    echo "=============================================="
+                    echo "Deploying TikTok Clone"
+                    echo "=============================================="
+
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        -p ${COMPOSE_PROJECT} \
+                        down \
+                        --remove-orphans \
+                        || true
+
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        -p ${COMPOSE_PROJECT} \
+                        up -d \
+                        --force-recreate
+
+                    echo "=============================================="
+                    echo "Containers status"
+                    echo "=============================================="
+
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        -p ${COMPOSE_PROJECT} \
+                        ps
+
+                    echo "=============================================="
+                    echo "Cleaning unused Docker images"
+                    echo "=============================================="
+
+                    docker image prune -f
+                '''
+            }
+        }
+
+        // ============================================================
+        // HEALTH CHECK
+        // ============================================================
+
+        stage("Health Check") {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=============================================="
+                    echo "Waiting for services..."
+                    echo "=============================================="
+
+                    sleep 20
+
+                    echo "Backend health check:"
+
+                    curl -f http://localhost:8080/health
+
+                    echo ""
+                    echo "Frontend health check:"
+
+                    curl -f http://localhost:80
+
+                    echo ""
+                    echo "=============================================="
+                    echo "TikTok Clone deployed successfully!"
+                    echo "=============================================="
+
+                    CURRENT_IP=$(cat ${WORKSPACE}/aws_public_ip.txt)
+
+                    echo "Frontend: http://${CURRENT_IP}"
+                    echo "API:      http://${CURRENT_IP}:8080"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh '''
+                rm -f ${WORKSPACE}/aws_public_ip.txt || true
+            '''
+        }
+
+        success {
+            echo "TikTok Clone CI/CD completed successfully."
+        }
+
+        failure {
+            echo "TikTok Clone CI/CD FAILED."
+        }
+    }
+}

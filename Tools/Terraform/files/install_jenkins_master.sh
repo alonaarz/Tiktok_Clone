@@ -1,0 +1,241 @@
+#!/bin/bash
+set -euo pipefail
+
+# ============================================================
+# Java
+# ============================================================
+
+sudo apt update
+
+sudo apt install -y \
+  fontconfig \
+  openjdk-21-jre \
+  openjdk-21-jdk \
+  wget \
+  curl
+
+# ============================================================
+# Jenkins repository
+# ============================================================
+
+sudo mkdir -p /etc/apt/keyrings
+
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" \
+  | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt update
+sudo apt install -y jenkins
+
+# ============================================================
+# Stop Jenkins before configuration
+# ============================================================
+
+sudo systemctl stop jenkins
+
+# ============================================================
+# Jenkins plugins
+# ============================================================
+
+PLUGIN_MGR_VERSION="2.14.0"
+
+sudo wget -q -O /tmp/jenkins-plugin-manager.jar \
+  "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/$${PLUGIN_MGR_VERSION}/jenkins-plugin-manager-$${PLUGIN_MGR_VERSION}.jar"
+
+sudo java -jar /tmp/jenkins-plugin-manager.jar \
+  --war /usr/share/java/jenkins.war \
+  --plugin-download-directory /var/lib/jenkins/plugins \
+  --plugins \
+    configuration-as-code \
+    job-dsl \
+    ssh-slaves \
+    workflow-aggregator \
+    git \
+    docker-workflow
+
+sudo chown -R jenkins:jenkins /var/lib/jenkins/plugins
+
+# ============================================================
+# Jenkins secrets
+# ============================================================
+
+sudo mkdir -p /var/lib/jenkins/casc-secrets
+
+sudo tee /var/lib/jenkins/casc-secrets/admin-password > /dev/null <<'PASSEOF'
+${admin_password}
+PASSEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/agent-ssh-key > /dev/null <<'KEYEOF'
+${private_key_pem}
+KEYEOF
+
+sudo chmod 600 /var/lib/jenkins/casc-secrets/*
+
+sudo chown -R \
+  jenkins:jenkins \
+  /var/lib/jenkins/casc-secrets
+
+# ============================================================
+# Jenkins Configuration as Code
+# ============================================================
+
+sudo tee /var/lib/jenkins/jenkins.yaml > /dev/null <<'CASCEOF'
+
+jenkins:
+  systemMessage: "TikTok Clone Jenkins"
+
+  numExecutors: 0
+
+  securityRealm:
+    local:
+      allowsSignup: false
+
+      users:
+        - id: "admin"
+          password: "$${admin-password}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  nodes:
+
+    - permanent:
+        name: "agent-1"
+
+        labelString: "Agent001"
+
+        remoteFS: "/home/agent001/workspace"
+
+        numExecutors: 2
+
+        mode: NORMAL
+
+        launcher:
+          ssh:
+            host: "AGENT_IP_PLACEHOLDER"
+
+            port: 22
+
+            credentialsId: "agent-ssh-key"
+
+            sshHostKeyVerificationStrategy:
+              nonVerifyingKeyVerificationStrategy: {}
+
+        retentionStrategy: "always"
+
+
+credentials:
+
+  system:
+
+    domainCredentials:
+
+      - credentials:
+
+          - basicSSHUserPrivateKey:
+
+              scope: SYSTEM
+
+              id: "agent-ssh-key"
+
+              username: "agent001"
+
+              description: "SSH key for Jenkins Agent"
+
+              privateKeySource:
+
+                directEntry:
+
+		  privateKey: "$${agent-ssh-key}"
+
+jobs:
+
+  - script: |
+
+      pipelineJob('tiktok-clone') {
+
+        description('TikTok Clone CI/CD Pipeline')
+
+        definition {
+
+          cpsScm {
+
+            scm {
+
+              git {
+
+                remote {
+
+                  url('https://github.com/alonaarz/Tiktok_Clone.git')
+
+                }
+
+                branches('*/develop')
+
+              }
+
+            }
+
+            scriptPath('Tools/Jenkins.jenkinsfile')
+
+            lightweight(true)
+
+          }
+
+        }
+
+      }
+
+CASCEOF
+
+# ============================================================
+# Insert Agent private IP
+# ============================================================
+
+sudo sed -i \
+  "s/AGENT_IP_PLACEHOLDER/${agent_ip}/" \
+  /var/lib/jenkins/jenkins.yaml
+
+sudo chown jenkins:jenkins \
+  /var/lib/jenkins/jenkins.yaml
+
+# ============================================================
+# Jenkins systemd configuration
+# ============================================================
+
+sudo mkdir -p \
+  /etc/systemd/system/jenkins.service.d
+
+sudo tee \
+  /etc/systemd/system/jenkins.service.d/override.conf \
+  > /dev/null <<EOF
+
+[Service]
+
+Environment="JENKINS_LISTEN_ADDRESS=0.0.0.0"
+
+Environment="SECRETS=/var/lib/jenkins/casc-secrets"
+
+Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/jenkins.yaml"
+
+Environment="JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
+
+EOF
+
+# ============================================================
+# Start Jenkins
+# ============================================================
+
+sudo systemctl daemon-reload
+
+sudo systemctl enable jenkins
+
+sudo systemctl start jenkins
+
+echo "=============================================="
+echo "Jenkins Master installation complete"
+echo "Agent IP: ${agent_ip}"
+echo "=============================================="
