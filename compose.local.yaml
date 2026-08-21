@@ -69,6 +69,8 @@ services:
 
       LocalStorage__RootPath: "/app/local-storage"
 
+      LocalStorage__BaseUrl: "http://${CURRENT_IP}:8080"
+
     ports:
       - "8080:8080"
 
@@ -111,6 +113,7 @@ services:
       RabbitMQ__Password: tiktok_app_local_pass
 
       LocalStorage__RootPath: "/app/local-storage"
+      LocalStorage__BaseUrl: "http://${CURRENT_IP}:8080"
 
     networks:
       - tiktok_network

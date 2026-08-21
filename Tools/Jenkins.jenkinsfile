@@ -144,6 +144,7 @@ pipeline {
                     cd "${WORKSPACE}"
 
                     CURRENT_IP=$(cat aws_public_ip.txt)
+                    export CURRENT_IP
 
                     echo "=============================================="
                     echo "Building frontend Docker image"
