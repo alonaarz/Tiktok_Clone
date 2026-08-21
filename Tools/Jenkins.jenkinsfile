@@ -14,6 +14,20 @@ pipeline {
 
         COMPOSE_FILE    = "compose.local.yaml"
         COMPOSE_PROJECT = "tiktok-clone"
+
+        // Secrets required by compose.local.yaml ( ${JWT_KEY}, ${GOOGLE_CLIENT_ID},
+        // ${GOOGLE_CLIENT_SECRET}, ${SMTP_PASSWORD} ) and by the frontend build arg
+        // VITE_GOOGLE_CLIENT_ID. Docker Compose reads ${VAR} substitutions from the
+        // process environment first, so exporting them here is enough - no separate
+        // .env file needs to be generated on the agent.
+        //
+        // Must exist in Jenkins as "Secret text" credentials with these exact IDs
+        // (Manage Jenkins > Credentials) before the first build:
+        //   jwt-key, google-client-id, google-client-secret, smtp-password
+        JWT_KEY              = credentials('jwt-key')
+        GOOGLE_CLIENT_ID     = credentials('google-client-id')
+        GOOGLE_CLIENT_SECRET = credentials('google-client-secret')
+        SMTP_PASSWORD        = credentials('smtp-password')
     }
 
     stages {
@@ -91,31 +105,31 @@ pipeline {
             }
         }
 
-// ============================================================
-// BUILD VIDEO PROCESSOR
-// ============================================================
+        // ============================================================
+        // BUILD VIDEO PROCESSOR
+        // ============================================================
 
-stage("Build Video Processor") {
+        stage("Build Video Processor") {
 
-    steps {
+            steps {
 
-        sh '''
-            set -e
+                sh '''
+                    set -e
 
-            cd "${WORKSPACE}"
+                    cd "${WORKSPACE}"
 
-            echo "=============================================="
-            echo "Building video processor Docker image"
-            echo "=============================================="
+                    echo "=============================================="
+                    echo "Building video processor Docker image"
+                    echo "=============================================="
 
-            docker build \
-                -t "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}" \
-                -t "${IMAGE_NAME_VIDEO_PROCESSOR}:latest" \
-                -f back/VideoProcessor/.dockerfile \
-                back/VideoProcessor/
-        '''
-    }
-}
+                    docker build \
+                        -t "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}" \
+                        -t "${IMAGE_NAME_VIDEO_PROCESSOR}:latest" \
+                        -f back/VideoProcessor/.dockerfile \
+                        back/
+                '''
+            }
+        }
         // ============================================================
         // BUILD FRONTEND
         // ============================================================
@@ -255,3 +269,4 @@ stage("Build Video Processor") {
         }
     }
 }
+
