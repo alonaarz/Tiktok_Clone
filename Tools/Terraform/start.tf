@@ -15,13 +15,14 @@ terraform {
 # ============================================================
 
 provider "aws" {
-  region     = var.region
+  region     = "eu-north-1"
   access_key = var.aws_access_key
   secret_key = var.aws_secret_key
 }
 
 # ============================================================
-# SSH KEY FOR JENKINS MASTER -> AGENT
+# SSH KEY
+# Jenkins Master -> Jenkins Agent
 # ============================================================
 
 resource "tls_private_key" "jenkins_agent" {
@@ -35,8 +36,8 @@ resource "tls_private_key" "jenkins_agent" {
 
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
   enable_dns_support   = true
+  enable_dns_hostnames = true
 
   tags = {
     Name = "tiktok-clone-vpc"
@@ -87,162 +88,269 @@ resource "aws_route_table" "main" {
   }
 }
 
-# ============================================================
-# ROUTE TABLE ASSOCIATION
-# ============================================================
-
 resource "aws_route_table_association" "main" {
   subnet_id      = aws_subnet.main.id
   route_table_id = aws_route_table.main.id
 }
+
 # ============================================================
-# NETWORK ACL — PUBLIC SUBNET
-# ============================================================
-
-resource "aws_network_acl" "public" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name = "tiktok-clone-public-nacl"
-  }
-}
-
-resource "aws_network_acl_rule" "public_ingress" {
-  network_acl_id = aws_network_acl.public.id
-
-  rule_number = 100
-  egress      = false
-  protocol    = "-1"
-  rule_action = "allow"
-  cidr_block  = "0.0.0.0/0"
-}
-
-resource "aws_network_acl_rule" "public_egress" {
-  network_acl_id = aws_network_acl.public.id
-
-  rule_number = 100
-  egress      = true
-  protocol    = "-1"
-  rule_action = "allow"
-  cidr_block  = "0.0.0.0/0"
-}
-
-resource "aws_network_acl_association" "public" {
-  subnet_id      = aws_subnet.main.id
-  network_acl_id = aws_network_acl.public.id
-}
-# ============================================================
-# SECURITY GROUP — JENKINS MASTER
+# SECURITY GROUP
+# JENKINS MASTER
 # ============================================================
 
 resource "aws_security_group" "jenkins_master_sg" {
-  name        = "TiktokJenkinsMasterSG"
-  description = "Security group for Jenkins Master"
+  name        = "tiktok-clone-jenkins-master-sg"
+  description = "Security group for TikTok Clone Jenkins Master"
   vpc_id      = aws_vpc.main.id
 
   tags = {
-    Name = "Tiktok-Jenkins-Master-SG"
+    Name = "TikTokClone-Jenkins-Master-SG"
   }
 }
 
-# SSH from administrator
-resource "aws_vpc_security_group_ingress_rule" "master_ssh" {
-  security_group_id = aws_security_group.jenkins_master_sg.id
-  cidr_ipv4         = var.my_ip
+# SSH from user's IP
+resource "aws_security_group_rule" "master_ssh" {
+  type              = "ingress"
   from_port         = 22
   to_port           = 22
-  ip_protocol       = "tcp"
-  description       = "SSH from administrator"
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_master_sg.id
+
+  description = "SSH access to Jenkins Master"
 }
 
 # Jenkins Web UI
-resource "aws_vpc_security_group_ingress_rule" "master_jenkins" {
-  security_group_id = aws_security_group.jenkins_master_sg.id
-  cidr_ipv4         = var.my_ip
+resource "aws_security_group_rule" "master_jenkins_ui" {
+  type              = "ingress"
   from_port         = 8080
   to_port           = 8080
-  ip_protocol       = "tcp"
-  description       = "Jenkins Web UI"
-}
-
-# Jenkins Agent -> Master
-resource "aws_vpc_security_group_ingress_rule" "master_from_agent" {
-  security_group_id            = aws_security_group.jenkins_master_sg.id
-  referenced_security_group_id = aws_security_group.jenkins_agent_sg.id
-  from_port                    = 8080
-  to_port                      = 8080
-  ip_protocol                  = "tcp"
-  description                  = "Jenkins Agent to Master"
-}
-
-# Master outbound traffic
-resource "aws_vpc_security_group_egress_rule" "master_all" {
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
   security_group_id = aws_security_group.jenkins_master_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-  description       = "Allow all outbound traffic"
+
+  description = "Jenkins Web UI"
+}
+
+# SSH from Jenkins Agent
+# Не є обов'язковим для SSH-launcher, але залишаємо
+# для можливості адміністрування Master з Agent.
+resource "aws_security_group_rule" "master_ssh_from_agent" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.jenkins_agent_sg.id
+  security_group_id        = aws_security_group.jenkins_master_sg.id
+
+  description = "SSH from Jenkins Agent"
+}
+
+# Outbound traffic
+resource "aws_security_group_rule" "master_egress" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_master_sg.id
+
+  description = "Allow all outbound traffic"
 }
 
 # ============================================================
-# SECURITY GROUP — JENKINS AGENT
+# SECURITY GROUP
+# JENKINS AGENT
 # ============================================================
 
 resource "aws_security_group" "jenkins_agent_sg" {
-  name        = "TiktokJenkinsAgentSG"
-  description = "Security group for Jenkins Agent and TikTok Clone"
+  name        = "tiktok-clone-jenkins-agent-sg"
+  description = "Security group for TikTok Clone Jenkins Agent"
   vpc_id      = aws_vpc.main.id
 
   tags = {
-    Name = "Tiktok-Jenkins-Agent-SG"
+    Name = "TikTokClone-Jenkins-Agent-SG"
   }
 }
 
-# SSH from administrator
-resource "aws_vpc_security_group_ingress_rule" "agent_ssh" {
-  security_group_id = aws_security_group.jenkins_agent_sg.id
-  cidr_ipv4         = var.my_ip
+# SSH from user's IP
+resource "aws_security_group_rule" "agent_ssh_from_user" {
+  type              = "ingress"
   from_port         = 22
   to_port           = 22
-  ip_protocol       = "tcp"
-  description       = "SSH from administrator"
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "SSH access to Jenkins Agent"
 }
 
-# TikTok Clone Frontend
-resource "aws_vpc_security_group_ingress_rule" "agent_http" {
-  security_group_id = aws_security_group.jenkins_agent_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
+# SSH from Jenkins Master
+# Це головне правило для Jenkins SSH launcher.
+resource "aws_security_group_rule" "agent_ssh_from_master" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.jenkins_master_sg.id
+  security_group_id        = aws_security_group.jenkins_agent_sg.id
+
+  description = "Jenkins Master SSH access"
+}
+
+# ============================================================
+# TIKTOK CLONE FRONTEND
+# ============================================================
+
+resource "aws_security_group_rule" "agent_frontend" {
+  type              = "ingress"
   from_port         = 80
   to_port           = 80
-  ip_protocol       = "tcp"
-  description       = "TikTok Clone Frontend"
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "TikTok Clone Frontend"
 }
 
-# TikTok Clone API
-resource "aws_vpc_security_group_ingress_rule" "agent_api" {
-  security_group_id = aws_security_group.jenkins_agent_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
+# ============================================================
+# TIKTOK CLONE BACKEND
+# ============================================================
+
+resource "aws_security_group_rule" "agent_backend" {
+  type              = "ingress"
   from_port         = 8080
   to_port           = 8080
-  ip_protocol       = "tcp"
-  description       = "TikTok Clone API"
-}
-
-# Jenkins Master -> Agent
-resource "aws_vpc_security_group_ingress_rule" "agent_from_master" {
-  security_group_id            = aws_security_group.jenkins_agent_sg.id
-  referenced_security_group_id = aws_security_group.jenkins_master_sg.id
-  from_port                    = 0
-  to_port                      = 65535
-  ip_protocol                  = "tcp"
-  description                  = "Traffic from Jenkins Master"
-}
-
-# Agent outbound traffic
-resource "aws_vpc_security_group_egress_rule" "agent_all" {
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.jenkins_agent_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-  description       = "Allow all outbound traffic"
+
+  description = "TikTok Clone Backend API"
+}
+
+# ============================================================
+# RABBITMQ MANAGEMENT
+# Optional, but useful for debugging
+# ============================================================
+
+resource "aws_security_group_rule" "agent_rabbitmq_management" {
+  type              = "ingress"
+  from_port         = 15672
+  to_port           = 15672
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "RabbitMQ Management UI"
+}
+
+# ============================================================
+# POSTGRESQL
+# Optional external access
+# ============================================================
+
+resource "aws_security_group_rule" "agent_postgres" {
+  type              = "ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "PostgreSQL access"
+}
+
+# ============================================================
+# REDIS
+# Optional external access
+# ============================================================
+
+resource "aws_security_group_rule" "agent_redis" {
+  type              = "ingress"
+  from_port         = 6379
+  to_port           = 6379
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "Redis access"
+}
+
+# ============================================================
+# ICMP
+# Useful for diagnostics
+# ============================================================
+
+resource "aws_security_group_rule" "agent_icmp" {
+  type              = "ingress"
+  from_port         = 8
+  to_port           = 0
+  protocol          = "icmp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "Ping Jenkins Agent"
+}
+
+resource "aws_security_group_rule" "master_icmp" {
+  type              = "ingress"
+  from_port         = 8
+  to_port           = 0
+  protocol          = "icmp"
+  cidr_blocks       = [var.my_ip]
+  security_group_id = aws_security_group.jenkins_master_sg.id
+
+  description = "Ping Jenkins Master"
+}
+
+# ============================================================
+# AGENT OUTBOUND
+# ============================================================
+
+resource "aws_security_group_rule" "agent_egress" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+
+  description = "Allow all outbound traffic"
+}
+
+# ============================================================
+# JENKINS AGENT EC2
+# Створюємо першим, тому що Master використовує його private IP
+# ============================================================
+
+resource "aws_instance" "jenkins_agent" {
+  subnet_id              = aws_subnet.main.id
+  availability_zone      = var.a_zone
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  key_name               = var.key_name
+  vpc_security_group_ids = [aws_security_group.jenkins_agent_sg.id]
+
+  ebs_block_device {
+    device_name = "/dev/sda1"
+    volume_size = 20
+    volume_type = "gp3"
+
+    tags = {
+      Name = "tiktok-clone-jenkins-agent-disk"
+    }
+  }
+
+  tags = {
+    Name = "TikTok-Clone-Jenkins-Agent"
+  }
+
+  user_data = templatefile(
+    "files/install_jenkins_agent.sh",
+    {
+      public_key = tls_private_key.jenkins_agent.public_key_openssh
+    }
+  )
 }
 
 # ============================================================
@@ -250,69 +358,35 @@ resource "aws_vpc_security_group_egress_rule" "agent_all" {
 # ============================================================
 
 resource "aws_instance" "jenkins_master" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
   subnet_id              = aws_subnet.main.id
   availability_zone      = var.a_zone
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.jenkins_master_sg.id]
 
-  associate_public_ip_address = true
-
   ebs_block_device {
     device_name = "/dev/sda1"
     volume_size = 15
     volume_type = "gp3"
 
     tags = {
-      Name = "tiktok-jenkins-master-disk"
+      Name = "tiktok-clone-jenkins-master-disk"
     }
   }
 
-  user_data = templatefile("files/install_jenkins_master.sh", {
-    agent_ip        = aws_instance.jenkins_agent.private_ip
-    private_key_pem = tls_private_key.jenkins_agent.private_key_pem
-    admin_password  = var.jenkins_admin_password
-  })
-
   tags = {
-    Name = "TikTok-Jenkins-Master"
-    Role = "jenkins-master"
+    Name = "TikTok-Clone-Jenkins-Master"
   }
-}
 
-# ============================================================
-# JENKINS AGENT EC2
-# ============================================================
-
-resource "aws_instance" "jenkins_agent" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.main.id
-  availability_zone      = var.a_zone
-  key_name               = var.key_name
-  vpc_security_group_ids = [aws_security_group.jenkins_agent_sg.id]
-
-  associate_public_ip_address = true
-
-  ebs_block_device {
-    device_name = "/dev/sda1"
-    volume_size = 15
-    volume_type = "gp3"
-
-    tags = {
-      Name = "tiktok-jenkins-agent-disk"
+  user_data = templatefile(
+    "files/install_jenkins_master.sh",
+    {
+      agent_ip        = aws_instance.jenkins_agent.private_ip
+      private_key_pem = tls_private_key.jenkins_agent.private_key_pem
+      admin_password  = var.jenkins_admin_password
     }
-  }
-
-  user_data = templatefile("files/install_jenkins_agent.sh", {
-    public_key = tls_private_key.jenkins_agent.public_key_openssh
-  })
-
-  tags = {
-    Name = "TikTok-Jenkins-Agent"
-    Role = "jenkins-agent"
-  }
+  )
 }
 
 # ============================================================
@@ -320,21 +394,26 @@ resource "aws_instance" "jenkins_agent" {
 # ============================================================
 
 output "jenkins_master_public_ip" {
-  description = "Public IP address of Jenkins Master"
   value       = aws_instance.jenkins_master.public_ip
+  description = "Public IP address of Jenkins Master"
 }
 
 output "jenkins_master_private_ip" {
-  description = "Private IP address of Jenkins Master"
   value       = aws_instance.jenkins_master.private_ip
+  description = "Private IP address of Jenkins Master"
 }
 
 output "jenkins_agent_public_ip" {
-  description = "Public IP address of Jenkins Agent"
   value       = aws_instance.jenkins_agent.public_ip
+  description = "Public IP address of Jenkins Agent"
 }
 
 output "jenkins_agent_private_ip" {
-  description = "Private IP address of Jenkins Agent"
   value       = aws_instance.jenkins_agent.private_ip
+  description = "Private IP address of Jenkins Agent"
+}
+
+output "jenkins_url" {
+  value       = "http://${aws_instance.jenkins_master.public_ip}:8080"
+  description = "Jenkins Web UI"
 }

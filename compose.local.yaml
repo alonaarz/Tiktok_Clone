@@ -55,8 +55,8 @@ services:
       ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=tiktok_clone;Username=postgres;Password=mypassword"
 
       RabbitMQ__HostName: "rabbitMQ"
-      RabbitMQ__UserName: guest
-      RabbitMQ__Password: guest
+      RabbitMQ__UserName: tiktok_app
+      RabbitMQ__Password: tiktok_app_local_pass
 
       Jwt__Key: ${JWT_KEY}
 
@@ -107,8 +107,8 @@ services:
       DOTNET_ENVIRONMENT: Development
 
       RabbitMQ__HostName: "rabbitMQ"
-      RabbitMQ__UserName: guest
-      RabbitMQ__Password: guest
+      RabbitMQ__UserName: tiktok_app
+      RabbitMQ__Password: tiktok_app_local_pass
 
       LocalStorage__RootPath: "/app/local-storage"
 
@@ -137,8 +137,12 @@ services:
     container_name: rabbitMQ
 
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      # A non-"guest" user is required: RabbitMQ's default guest account
+      # is only allowed to authenticate from localhost, but api/video_processor
+      # connect to this container over the docker network (hostname "rabbitMQ"),
+      # which is not localhost from RabbitMQ's point of view.
+      RABBITMQ_DEFAULT_USER: tiktok_app
+      RABBITMQ_DEFAULT_PASS: tiktok_app_local_pass
 
     ports:
       - "5672:5672"

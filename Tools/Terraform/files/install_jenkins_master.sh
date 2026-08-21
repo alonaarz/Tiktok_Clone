@@ -149,7 +149,7 @@ credentials:
 
                 directEntry:
 
-		  privateKey: "$${agent-ssh-key}"
+                  privateKey: "$${agent-ssh-key}"
 
 jobs:
 

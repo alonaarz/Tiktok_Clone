@@ -13,6 +13,15 @@ sudo apt update
 sudo apt install -y openjdk-21-jre openjdk-21-jdk
 
 # ============================================================
+# Git
+# ============================================================
+
+# Required because "checkout scm" in the Jenkinsfile runs on this
+# agent (pipeline is declared with a top-level `agent { label ... }`),
+# not on the master, and minimal Ubuntu cloud images do not ship git.
+sudo apt install -y git
+
+# ============================================================
 # Docker
 # ============================================================
 

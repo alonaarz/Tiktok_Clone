@@ -251,13 +251,6 @@ pipeline {
 
     post {
 
-        always {
-
-            sh '''
-                rm -f "${WORKSPACE}/aws_public_ip.txt" || true
-            '''
-        }
-
         success {
 
             echo "TikTok Clone CI/CD completed successfully."
