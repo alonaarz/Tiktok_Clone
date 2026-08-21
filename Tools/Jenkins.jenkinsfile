@@ -10,6 +10,7 @@ pipeline {
 
         IMAGE_NAME_API   = "alonaarz/tiktok_clone_back"
         IMAGE_NAME_FRONT = "alonaarz/tiktok_clone_front"
+        IMAGE_NAME_VIDEO_PROCESSOR = "alonaarz/tiktok_clone_video_processor"
 
         COMPOSE_FILE    = "compose.local.yaml"
         COMPOSE_PROJECT = "tiktok-clone"
@@ -90,6 +91,31 @@ pipeline {
             }
         }
 
+// ============================================================
+// BUILD VIDEO PROCESSOR
+// ============================================================
+
+stage("Build Video Processor") {
+
+    steps {
+
+        sh '''
+            set -e
+
+            cd "${WORKSPACE}"
+
+            echo "=============================================="
+            echo "Building video processor Docker image"
+            echo "=============================================="
+
+            docker build \
+                -t "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}" \
+                -t "${IMAGE_NAME_VIDEO_PROCESSOR}:latest" \
+                -f back/VideoProcessor/.dockerfile \
+                back/VideoProcessor/
+        '''
+    }
+}
         // ============================================================
         // BUILD FRONTEND
         // ============================================================
