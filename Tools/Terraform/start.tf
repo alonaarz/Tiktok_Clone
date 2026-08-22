@@ -382,11 +382,27 @@ resource "aws_instance" "jenkins_master" {
   user_data = templatefile(
     "files/install_jenkins_master.sh",
     {
-      agent_ip        = aws_instance.jenkins_agent.private_ip
-      private_key_pem = tls_private_key.jenkins_agent.private_key_pem
-      admin_password  = var.jenkins_admin_password
+      agent_ip              = aws_instance.jenkins_agent.private_ip
+      private_key_pem       = tls_private_key.jenkins_agent.private_key_pem
+      admin_password        = var.jenkins_admin_password
+      jwt_key               = var.jwt_key
+      google_client_id      = var.google_client_id
+      google_client_secret  = var.google_client_secret
+      smtp_password         = var.smtp_password
     }
   )
+}
+
+# Stable public IP for the master: without this, every instance
+# replacement (e.g. from user_data_replace_on_change) hands out a new
+# random public IP and the Jenkins UI URL changes each time.
+resource "aws_eip" "jenkins_master" {
+  domain   = "vpc"
+  instance = aws_instance.jenkins_master.id
+
+  tags = {
+    Name = "tiktok-clone-jenkins-master-eip"
+  }
 }
 
 # ============================================================
@@ -394,8 +410,8 @@ resource "aws_instance" "jenkins_master" {
 # ============================================================
 
 output "jenkins_master_public_ip" {
-  value       = aws_instance.jenkins_master.public_ip
-  description = "Public IP address of Jenkins Master"
+  value       = aws_eip.jenkins_master.public_ip
+  description = "Public IP address of Jenkins Master (stable Elastic IP)"
 }
 
 output "jenkins_master_private_ip" {
@@ -414,6 +430,7 @@ output "jenkins_agent_private_ip" {
 }
 
 output "jenkins_url" {
-  value       = "http://${aws_instance.jenkins_master.public_ip}:8080"
+  value       = "http://${aws_eip.jenkins_master.public_ip}:8080"
   description = "Jenkins Web UI"
 }
+

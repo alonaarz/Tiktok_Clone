@@ -71,6 +71,22 @@ sudo tee /var/lib/jenkins/casc-secrets/agent-ssh-key > /dev/null <<'KEYEOF'
 ${private_key_pem}
 KEYEOF
 
+sudo tee /var/lib/jenkins/casc-secrets/jwt-key > /dev/null <<'JWTEOF'
+${jwt_key}
+JWTEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/google-client-id > /dev/null <<'GCIDEOF'
+${google_client_id}
+GCIDEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/google-client-secret > /dev/null <<'GCSECEOF'
+${google_client_secret}
+GCSECEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/smtp-password > /dev/null <<'SMTPEOF'
+${smtp_password}
+SMTPEOF
+
 sudo chmod 600 /var/lib/jenkins/casc-secrets/*
 
 sudo chown -R \
@@ -150,6 +166,46 @@ credentials:
                 directEntry:
 
                   privateKey: "$${agent-ssh-key}"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "jwt-key"
+
+              secret: "$${jwt-key}"
+
+              description: "JWT signing key for the API"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "google-client-id"
+
+              secret: "$${google-client-id}"
+
+              description: "Google OAuth client id"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "google-client-secret"
+
+              secret: "$${google-client-secret}"
+
+              description: "Google OAuth client secret"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "smtp-password"
+
+              secret: "$${smtp-password}"
+
+              description: "SMTP password"
 
 jobs:
 

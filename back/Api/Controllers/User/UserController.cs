@@ -194,7 +194,7 @@ public class UserController(IMediator _mediator) : ControllerBase
         Response.Cookies.Append("refreshToken", "", new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = Request.IsHttps,
             SameSite = SameSiteMode.Strict,
             Expires = DateTime.UtcNow.AddDays(-1)
         });
