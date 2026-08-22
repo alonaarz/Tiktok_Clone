@@ -181,6 +181,15 @@ pipeline {
                     echo "Deploying TikTok Clone"
                     echo "=============================================="
 
+                    # CURRENT_IP is not inherited from earlier stages (each sh
+                    # block is its own shell process). docker compose needs it
+                    # here too, since compose.local.yaml uses ${CURRENT_IP} for
+                    # LocalStorage__BaseUrl - without this it silently renders
+                    # as "http://:8080" (no host) and every video/avatar URL
+                    # the API returns is broken.
+                    CURRENT_IP=$(cat "${WORKSPACE}/aws_public_ip.txt")
+                    export CURRENT_IP
+
                     docker compose \
                         -f "${COMPOSE_FILE}" \
                         -p "${COMPOSE_PROJECT}" \
@@ -263,4 +272,5 @@ pipeline {
         }
     }
 }
+
 
