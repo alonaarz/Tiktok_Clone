@@ -33,7 +33,7 @@ sudo apt install -y jenkins
 # Stop Jenkins before configuration
 # ============================================================
 
-sudo systemctl stop jenkins
+sudo systemctl stop jenkins || true
 
 # ============================================================
 # Jenkins plugins
@@ -208,6 +208,7 @@ credentials:
 
               description: "SMTP password"
 
+
 jobs:
 
   - script: |
@@ -218,9 +219,10 @@ jobs:
 
         triggers {
 
-          // Polls git every 2 minutes instead of relying on a GitHub webhook:
-          // port 8080 on the master is restricted to var.my_ip in the security
-          // group, so GitHub's servers could never reach a webhook here anyway.
+          // Check GitHub every 2 minutes.
+          // GitHub webhook is not used because Jenkins port 8080
+          // is restricted by the AWS security group.
+
           pollSCM('H/2 * * * *')
 
         }
@@ -245,7 +247,10 @@ jobs:
 
             }
 
-            scriptPath('Tools/Jenkins.jenkinsfile')
+            // IMPORTANT:
+            // This is the actual CI/CD pipeline.
+
+            scriptPath('Tools/JenkinsPipeline.groovy')
 
             lightweight(true)
 
@@ -255,8 +260,8 @@ jobs:
 
       }
 
-      // Запускає перший білд одразу, щойно Jenkins створить job -
-      // не чекаючи першого спрацювання pollSCM.
+      // Start the first build immediately after job creation.
+
       queue('tiktok-clone')
 
 CASCEOF
@@ -303,7 +308,7 @@ sudo systemctl daemon-reload
 
 sudo systemctl enable jenkins
 
-sudo systemctl start jenkins
+sudo systemctl restart jenkins
 
 echo "=============================================="
 echo "Jenkins Master installation complete"
