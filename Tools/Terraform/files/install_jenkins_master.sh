@@ -215,15 +215,6 @@ jobs:
 
         description('TikTok Clone CI/CD Pipeline')
 
-        triggers {
-
-          // Polls git every 5 minutes instead of relying on a GitHub webhook:
-          // port 8080 on the master is restricted to var.my_ip in the security
-          // group, so GitHub's servers could never reach a webhook here anyway.
-          pollSCM('H/5 * * * *')
-
-        }
-
         definition {
 
           cpsScm {

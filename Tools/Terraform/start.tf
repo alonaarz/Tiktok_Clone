@@ -379,16 +379,18 @@ resource "aws_instance" "jenkins_master" {
     Name = "TikTok-Clone-Jenkins-Master"
   }
 
+  user_data_replace_on_change = true
+
   user_data = templatefile(
     "files/install_jenkins_master.sh",
     {
-      agent_ip              = aws_instance.jenkins_agent.private_ip
-      private_key_pem       = tls_private_key.jenkins_agent.private_key_pem
-      admin_password        = var.jenkins_admin_password
-      jwt_key               = var.jwt_key
-      google_client_id      = var.google_client_id
-      google_client_secret  = var.google_client_secret
-      smtp_password         = var.smtp_password
+      agent_ip             = aws_instance.jenkins_agent.private_ip
+      private_key_pem      = tls_private_key.jenkins_agent.private_key_pem
+      admin_password       = var.jenkins_admin_password
+      jwt_key              = var.jwt_key
+      google_client_id     = var.google_client_id
+      google_client_secret = var.google_client_secret
+      smtp_password        = var.smtp_password
     }
   )
 }
