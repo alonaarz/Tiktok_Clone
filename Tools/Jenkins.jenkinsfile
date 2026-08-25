@@ -54,7 +54,6 @@ sudo java -jar /tmp/jenkins-plugin-manager.jar \
     workflow-aggregator \
     git \
     docker-workflow \
-    pollscm
 
 sudo chown -R jenkins:jenkins /var/lib/jenkins/plugins
 
@@ -218,13 +217,6 @@ jobs:
         description('TikTok Clone CI/CD Pipeline')
 
         triggers {
-
-          // Check GitHub every 2 minutes.
-          // GitHub webhook is not used because Jenkins port 8080
-          // is restricted by the AWS security group.
-
-          pollSCM('H/2 * * * *')
-
         }
 
         definition {
