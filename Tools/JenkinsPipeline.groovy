@@ -65,21 +65,35 @@ pipeline {
 
             steps {
 
-                sh '''
-                    set -e
+                withCredentials([
+                    string(
+                        credentialsId: 'google-client-id',
+                        variable: 'GOOGLE_CLIENT_ID'
+                    )
+                ]) {
 
-                    cd "${WORKSPACE}"
+                    sh '''
+                        set -e
 
-                    echo "=============================================="
-                    echo "Building FRONTEND image"
-                    echo "=============================================="
+                        cd "${WORKSPACE}"
 
-                    docker build \
-                      -t "${IMAGE_NAME_FRONT}:${BUILD_NUMBER}" \
-                      -t "${IMAGE_NAME_FRONT}:latest" \
-                      -f front/Dockerfile \
-                      .
-                '''
+                        CURRENT_IP=$(cat .current_ip)
+
+                        echo "=============================================="
+                        echo "Building FRONTEND image"
+                        echo "API URL: http://${CURRENT_IP}:8080"
+                        echo "=============================================="
+
+                        docker build \
+                          --build-arg NGINX_ENV=local \
+                          --build-arg VITE_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+                          --build-arg VITE_API_BASE_URL="http://${CURRENT_IP}:8080" \
+                          -t "${IMAGE_NAME_FRONT}:${BUILD_NUMBER}" \
+                          -t "${IMAGE_NAME_FRONT}:latest" \
+                          -f front/Dockerfile \
+                          front/
+                    '''
+                }
             }
         }
 
@@ -104,8 +118,8 @@ pipeline {
                     docker build \
                       -t "${IMAGE_NAME_BACK}:${BUILD_NUMBER}" \
                       -t "${IMAGE_NAME_BACK}:latest" \
-                      -f back/Dockerfile \
-                      .
+                      -f back/.dockerfile \
+                      back/
                 '''
             }
         }
@@ -131,65 +145,8 @@ pipeline {
                     docker build \
                       -t "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}" \
                       -t "${IMAGE_NAME_VIDEO_PROCESSOR}:latest" \
-                      -f video_processor/Dockerfile \
-                      .
-                '''
-            }
-        }
-
-
-        // ====================================================
-        // DOCKER HUB LOGIN
-        // ====================================================
-
-        stage("Docker Hub login") {
-
-            steps {
-
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'DockerHub-Credentials',
-                        usernameVariable: 'DOCKER_USERNAME',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    )
-                ]) {
-
-                    sh '''
-                        set +x
-
-                        echo "${DOCKER_PASSWORD}" | \
-                          docker login \
-                            -u "${DOCKER_USERNAME}" \
-                            --password-stdin
-                    '''
-                }
-            }
-        }
-
-
-        // ====================================================
-        // PUSH IMAGES
-        // ====================================================
-
-        stage("Push Docker images") {
-
-            steps {
-
-                sh '''
-                    set -e
-
-                    echo "=============================================="
-                    echo "Pushing Docker images to Docker Hub"
-                    echo "=============================================="
-
-                    docker push "${IMAGE_NAME_FRONT}:${BUILD_NUMBER}"
-                    docker push "${IMAGE_NAME_FRONT}:latest"
-
-                    docker push "${IMAGE_NAME_BACK}:${BUILD_NUMBER}"
-                    docker push "${IMAGE_NAME_BACK}:latest"
-
-                    docker push "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}"
-                    docker push "${IMAGE_NAME_VIDEO_PROCESSOR}:latest"
+                      -f back/VideoProcessor/.dockerfile \
+                      back/
                 '''
             }
         }
@@ -246,6 +203,7 @@ pipeline {
 
                         docker compose \
                           -f "${COMPOSE_FILE}" \
+                          -p tiktok-clone \
                           down \
                           --remove-orphans || true
 
@@ -253,6 +211,7 @@ pipeline {
 
                         docker compose \
                           -f "${COMPOSE_FILE}" \
+                          -p tiktok-clone \
                           up \
                           -d
 
@@ -262,6 +221,7 @@ pipeline {
 
                         docker compose \
                           -f "${COMPOSE_FILE}" \
+                          -p tiktok-clone \
                           ps
                     '''
                 }
@@ -283,8 +243,6 @@ pipeline {
                     echo "Cleaning unused Docker images..."
 
                     docker image prune -f
-
-                    docker logout
                 '''
             }
         }

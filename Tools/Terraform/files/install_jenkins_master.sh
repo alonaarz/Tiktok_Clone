@@ -33,7 +33,7 @@ sudo apt install -y jenkins
 # Stop Jenkins before configuration
 # ============================================================
 
-sudo systemctl stop jenkins
+sudo systemctl stop jenkins || true
 
 # ============================================================
 # Jenkins plugins
@@ -53,7 +53,7 @@ sudo java -jar /tmp/jenkins-plugin-manager.jar \
     ssh-slaves \
     workflow-aggregator \
     git \
-    docker-workflow
+    docker-workflow \
 
 sudo chown -R jenkins:jenkins /var/lib/jenkins/plugins
 
@@ -207,6 +207,7 @@ credentials:
 
               description: "SMTP password"
 
+
 jobs:
 
   - script: |
@@ -214,6 +215,15 @@ jobs:
       pipelineJob('tiktok-clone') {
 
         description('TikTok Clone CI/CD Pipeline')
+
+        triggers {
+
+          // Polls git every 5 minutes and builds on new commits. Port 8080
+          // on the master is restricted to var.my_ip in the security group,
+          // so a GitHub webhook could never reach Jenkins anyway.
+          pollSCM('H/5 * * * *')
+
+        }
 
         definition {
 
@@ -235,7 +245,10 @@ jobs:
 
             }
 
-            scriptPath('Tools/Jenkins.jenkinsfile')
+            // IMPORTANT:
+            // This is the actual CI/CD pipeline.
+
+            scriptPath('Tools/JenkinsPipeline.groovy')
 
             lightweight(true)
 
@@ -244,6 +257,10 @@ jobs:
         }
 
       }
+
+      // Start the first build immediately after job creation.
+
+      queue('tiktok-clone')
 
 CASCEOF
 
@@ -289,7 +306,7 @@ sudo systemctl daemon-reload
 
 sudo systemctl enable jenkins
 
-sudo systemctl start jenkins
+sudo systemctl restart jenkins
 
 echo "=============================================="
 echo "Jenkins Master installation complete"

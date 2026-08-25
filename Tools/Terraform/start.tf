@@ -345,6 +345,11 @@ resource "aws_instance" "jenkins_agent" {
     Name = "TikTok-Clone-Jenkins-Agent"
   }
 
+  # Without this, EC2 never re-runs user_data on an existing instance -
+  # fixes to install_jenkins_agent.sh would silently not apply unless the
+  # instance is replaced for some other reason.
+  user_data_replace_on_change = true
+
   user_data = templatefile(
     "files/install_jenkins_agent.sh",
     {
@@ -435,4 +440,5 @@ output "jenkins_url" {
   value       = "http://${aws_eip.jenkins_master.public_ip}:8080"
   description = "Jenkins Web UI"
 }
+
 
