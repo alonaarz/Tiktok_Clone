@@ -1,276 +1,311 @@
-#!groovy
+#!/bin/bash
+set -euo pipefail
 
-pipeline {
+# ============================================================
+# Java
+# ============================================================
 
-    agent {
-        label 'Agent001'
-    }
+sudo apt update
 
-    environment {
+sudo apt install -y \
+  fontconfig \
+  openjdk-21-jre \
+  openjdk-21-jdk \
+  wget \
+  curl
 
-        IMAGE_NAME_API   = "alonaarz/tiktok_clone_back"
-        IMAGE_NAME_FRONT = "alonaarz/tiktok_clone_front"
-        IMAGE_NAME_VIDEO_PROCESSOR = "alonaarz/tiktok_clone_video_processor"
+# ============================================================
+# Jenkins repository
+# ============================================================
 
-        COMPOSE_FILE    = "compose.local.yaml"
-        COMPOSE_PROJECT = "tiktok-clone"
+sudo mkdir -p /etc/apt/keyrings
 
-        // Secrets required by compose.local.yaml ( ${JWT_KEY}, ${GOOGLE_CLIENT_ID},
-        // ${GOOGLE_CLIENT_SECRET}, ${SMTP_PASSWORD} ) and by the frontend build arg
-        // VITE_GOOGLE_CLIENT_ID. Docker Compose reads ${VAR} substitutions from the
-        // process environment first, so exporting them here is enough - no separate
-        // .env file needs to be generated on the agent.
-        //
-        // Must exist in Jenkins as "Secret text" credentials with these exact IDs
-        // (Manage Jenkins > Credentials) before the first build:
-        //   jwt-key, google-client-id, google-client-secret, smtp-password
-        JWT_KEY              = credentials('jwt-key')
-        GOOGLE_CLIENT_ID     = credentials('google-client-id')
-        GOOGLE_CLIENT_SECRET = credentials('google-client-secret')
-        SMTP_PASSWORD        = credentials('smtp-password')
-    }
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
 
-    stages {
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" \
+  | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 
-        // ============================================================
-        // CHECKOUT
-        // ============================================================
+sudo apt update
+sudo apt install -y jenkins
 
-        stage("Checkout") {
+# ============================================================
+# Stop Jenkins before configuration
+# ============================================================
 
-            steps {
+sudo systemctl stop jenkins
 
-                echo "=============================================="
-                echo "Checking out TikTok Clone"
-                echo "=============================================="
+# ============================================================
+# Jenkins plugins
+# ============================================================
 
-                checkout scm
+PLUGIN_MGR_VERSION="2.14.0"
+
+sudo wget -q -O /tmp/jenkins-plugin-manager.jar \
+  "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/$${PLUGIN_MGR_VERSION}/jenkins-plugin-manager-$${PLUGIN_MGR_VERSION}.jar"
+
+sudo java -jar /tmp/jenkins-plugin-manager.jar \
+  --war /usr/share/java/jenkins.war \
+  --plugin-download-directory /var/lib/jenkins/plugins \
+  --plugins \
+    configuration-as-code \
+    job-dsl \
+    ssh-slaves \
+    workflow-aggregator \
+    git \
+    docker-workflow \
+    pollscm
+
+sudo chown -R jenkins:jenkins /var/lib/jenkins/plugins
+
+# ============================================================
+# Jenkins secrets
+# ============================================================
+
+sudo mkdir -p /var/lib/jenkins/casc-secrets
+
+sudo tee /var/lib/jenkins/casc-secrets/admin-password > /dev/null <<'PASSEOF'
+${admin_password}
+PASSEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/agent-ssh-key > /dev/null <<'KEYEOF'
+${private_key_pem}
+KEYEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/jwt-key > /dev/null <<'JWTEOF'
+${jwt_key}
+JWTEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/google-client-id > /dev/null <<'GCIDEOF'
+${google_client_id}
+GCIDEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/google-client-secret > /dev/null <<'GCSECEOF'
+${google_client_secret}
+GCSECEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/smtp-password > /dev/null <<'SMTPEOF'
+${smtp_password}
+SMTPEOF
+
+sudo chmod 600 /var/lib/jenkins/casc-secrets/*
+
+sudo chown -R \
+  jenkins:jenkins \
+  /var/lib/jenkins/casc-secrets
+
+# ============================================================
+# Jenkins Configuration as Code
+# ============================================================
+
+sudo tee /var/lib/jenkins/jenkins.yaml > /dev/null <<'CASCEOF'
+
+jenkins:
+  systemMessage: "TikTok Clone Jenkins"
+
+  numExecutors: 0
+
+  securityRealm:
+    local:
+      allowsSignup: false
+
+      users:
+        - id: "admin"
+          password: "$${admin-password}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  nodes:
+
+    - permanent:
+        name: "agent-1"
+
+        labelString: "Agent001"
+
+        remoteFS: "/home/agent001/workspace"
+
+        numExecutors: 2
+
+        mode: NORMAL
+
+        launcher:
+          ssh:
+            host: "AGENT_IP_PLACEHOLDER"
+
+            port: 22
+
+            credentialsId: "agent-ssh-key"
+
+            sshHostKeyVerificationStrategy:
+              nonVerifyingKeyVerificationStrategy: {}
+
+        retentionStrategy: "always"
+
+
+credentials:
+
+  system:
+
+    domainCredentials:
+
+      - credentials:
+
+          - basicSSHUserPrivateKey:
+
+              scope: SYSTEM
+
+              id: "agent-ssh-key"
+
+              username: "agent001"
+
+              description: "SSH key for Jenkins Agent"
+
+              privateKeySource:
+
+                directEntry:
+
+                  privateKey: "$${agent-ssh-key}"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "jwt-key"
+
+              secret: "$${jwt-key}"
+
+              description: "JWT signing key for the API"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "google-client-id"
+
+              secret: "$${google-client-id}"
+
+              description: "Google OAuth client id"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "google-client-secret"
+
+              secret: "$${google-client-secret}"
+
+              description: "Google OAuth client secret"
+
+          - string:
+
+              scope: GLOBAL
+
+              id: "smtp-password"
+
+              secret: "$${smtp-password}"
+
+              description: "SMTP password"
+
+jobs:
+
+  - script: |
+
+      pipelineJob('tiktok-clone') {
+
+        description('TikTok Clone CI/CD Pipeline')
+
+        triggers {
+
+          // Polls git every 2 minutes instead of relying on a GitHub webhook:
+          // port 8080 on the master is restricted to var.my_ip in the security
+          // group, so GitHub's servers could never reach a webhook here anyway.
+          pollSCM('H/2 * * * *')
+
+        }
+
+        definition {
+
+          cpsScm {
+
+            scm {
+
+              git {
+
+                remote {
+
+                  url('https://github.com/alonaarz/Tiktok_Clone.git')
+
+                }
+
+                branches('*/develop')
+
+              }
+
             }
+
+            scriptPath('Tools/Jenkins.jenkinsfile')
+
+            lightweight(true)
+
+          }
+
         }
 
-        // ============================================================
-        // PREPARE
-        // ============================================================
+      }
 
-        stage("Prepare") {
+      // Запускає перший білд одразу, щойно Jenkins створить job -
+      // не чекаючи першого спрацювання pollSCM.
+      queue('tiktok-clone')
 
-            steps {
+CASCEOF
 
-                sh '''
-                    set -e
+# ============================================================
+# Insert Agent private IP
+# ============================================================
 
-                    echo "=============================================="
-                    echo "Preparing build"
-                    echo "=============================================="
+sudo sed -i \
+  "s/AGENT_IP_PLACEHOLDER/${agent_ip}/" \
+  /var/lib/jenkins/jenkins.yaml
 
-                    cd "${WORKSPACE}"
+sudo chown jenkins:jenkins \
+  /var/lib/jenkins/jenkins.yaml
 
-                    CURRENT_IP=$(curl -4 -s https://ifconfig.me)
+# ============================================================
+# Jenkins systemd configuration
+# ============================================================
 
-                    if [ -z "$CURRENT_IP" ]; then
-                        echo "ERROR: Could not determine public IP"
-                        exit 1
-                    fi
+sudo mkdir -p \
+  /etc/systemd/system/jenkins.service.d
 
-                    echo "AWS Agent public IP: $CURRENT_IP"
+sudo tee \
+  /etc/systemd/system/jenkins.service.d/override.conf \
+  > /dev/null <<EOF
 
-                    echo "$CURRENT_IP" > "${WORKSPACE}/aws_public_ip.txt"
-                '''
-            }
-        }
+[Service]
 
-        // ============================================================
-        // BUILD BACKEND
-        // ============================================================
+Environment="JENKINS_LISTEN_ADDRESS=0.0.0.0"
 
-        stage("Build Backend") {
+Environment="SECRETS=/var/lib/jenkins/casc-secrets"
 
-            steps {
+Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/jenkins.yaml"
 
-                sh '''
-                    set -e
+Environment="JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
 
-                    cd "${WORKSPACE}"
+EOF
 
-                    echo "=============================================="
-                    echo "Building backend Docker image"
-                    echo "=============================================="
+# ============================================================
+# Start Jenkins
+# ============================================================
 
-                    docker build \
-                        -t "${IMAGE_NAME_API}:${BUILD_NUMBER}" \
-                        -t "${IMAGE_NAME_API}:latest" \
-                        -f back/.dockerfile \
-                        back/
-                '''
-            }
-        }
+sudo systemctl daemon-reload
 
-        // ============================================================
-        // BUILD VIDEO PROCESSOR
-        // ============================================================
+sudo systemctl enable jenkins
 
-        stage("Build Video Processor") {
+sudo systemctl start jenkins
 
-            steps {
-
-                sh '''
-                    set -e
-
-                    cd "${WORKSPACE}"
-
-                    echo "=============================================="
-                    echo "Building video processor Docker image"
-                    echo "=============================================="
-
-                    docker build \
-                        -t "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}" \
-                        -t "${IMAGE_NAME_VIDEO_PROCESSOR}:latest" \
-                        -f back/VideoProcessor/.dockerfile \
-                        back/
-                '''
-            }
-        }
-        // ============================================================
-        // BUILD FRONTEND
-        // ============================================================
-
-        stage("Build Frontend") {
-
-            steps {
-
-                sh '''
-                    set -e
-
-                    cd "${WORKSPACE}"
-
-                    CURRENT_IP=$(cat aws_public_ip.txt)
-                    export CURRENT_IP
-
-                    echo "=============================================="
-                    echo "Building frontend Docker image"
-                    echo "=============================================="
-
-                    echo "API URL: http://${CURRENT_IP}:8080"
-
-                    docker build \
-                        --build-arg NGINX_ENV=local \
-                        --build-arg VITE_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
-                        --build-arg VITE_API_BASE_URL="http://${CURRENT_IP}:8080" \
-                        -t "${IMAGE_NAME_FRONT}:${BUILD_NUMBER}" \
-                        -t "${IMAGE_NAME_FRONT}:latest" \
-                        -f front/Dockerfile \
-                        front/
-                '''
-            }
-        }
-
-        // ============================================================
-        // DEPLOY
-        // ============================================================
-
-        stage("Deploy") {
-
-            steps {
-
-                sh '''
-                    set -e
-
-                    cd "${WORKSPACE}"
-
-                    echo "=============================================="
-                    echo "Deploying TikTok Clone"
-                    echo "=============================================="
-
-                    # CURRENT_IP is not inherited from earlier stages (each sh
-                    # block is its own shell process). docker compose needs it
-                    # here too, since compose.local.yaml uses ${CURRENT_IP} for
-                    # LocalStorage__BaseUrl - without this it silently renders
-                    # as "http://:8080" (no host) and every video/avatar URL
-                    # the API returns is broken.
-                    CURRENT_IP=$(cat "${WORKSPACE}/aws_public_ip.txt")
-                    export CURRENT_IP
-
-                    docker compose \
-                        -f "${COMPOSE_FILE}" \
-                        -p "${COMPOSE_PROJECT}" \
-                        down \
-                        --remove-orphans || true
-
-                    docker compose \
-                        -f "${COMPOSE_FILE}" \
-                        -p "${COMPOSE_PROJECT}" \
-                        up -d \
-                        --force-recreate
-
-                    echo "=============================================="
-                    echo "Containers status"
-                    echo "=============================================="
-
-                    docker compose \
-                        -f "${COMPOSE_FILE}" \
-                        -p "${COMPOSE_PROJECT}" \
-                        ps
-                '''
-            }
-        }
-
-        // ============================================================
-        // HEALTH CHECK
-        // ============================================================
-
-        stage("Health Check") {
-
-            steps {
-
-                sh '''
-                    set -e
-
-                    echo "=============================================="
-                    echo "Waiting for services..."
-                    echo "=============================================="
-
-                    sleep 20
-
-                    echo "Backend health check..."
-
-                    curl -f http://localhost:8080/health
-
-                    echo ""
-                    echo "Frontend health check..."
-
-                    curl -f http://localhost:80
-
-                    echo ""
-
-                    CURRENT_IP=$(cat "${WORKSPACE}/aws_public_ip.txt")
-
-                    echo "=============================================="
-                    echo "TikTok Clone deployed successfully!"
-                    echo "=============================================="
-
-                    echo "Frontend: http://${CURRENT_IP}"
-                    echo "API:      http://${CURRENT_IP}:8080"
-                '''
-            }
-        }
-    }
-
-    // ================================================================
-    // POST
-    // ================================================================
-
-    post {
-
-        success {
-
-            echo "TikTok Clone CI/CD completed successfully."
-        }
-
-        failure {
-
-            echo "TikTok Clone CI/CD FAILED."
-        }
-    }
-}
-
-
+echo "=============================================="
+echo "Jenkins Master installation complete"
+echo "Agent IP: ${agent_ip}"
+echo "=============================================="
