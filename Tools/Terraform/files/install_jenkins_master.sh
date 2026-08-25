@@ -221,7 +221,7 @@ jobs:
           // Polls git every 5 minutes and builds on new commits. Port 8080
           // on the master is restricted to var.my_ip in the security group,
           // so a GitHub webhook could never reach Jenkins anyway.
-          pollSCM('H/5 * * * *')
+          scm('H/5 * * * *')
 
         }
 
