@@ -108,7 +108,6 @@ resource "aws_security_group" "jenkins_master_sg" {
   }
 }
 
-# SSH from user's IP
 resource "aws_security_group_rule" "master_ssh" {
   type              = "ingress"
   from_port         = 22
@@ -120,7 +119,6 @@ resource "aws_security_group_rule" "master_ssh" {
   description = "SSH access to Jenkins Master"
 }
 
-# Jenkins Web UI
 resource "aws_security_group_rule" "master_jenkins_ui" {
   type              = "ingress"
   from_port         = 8080
@@ -132,9 +130,6 @@ resource "aws_security_group_rule" "master_jenkins_ui" {
   description = "Jenkins Web UI"
 }
 
-# SSH from Jenkins Agent
-# Не є обов'язковим для SSH-launcher, але залишаємо
-# для можливості адміністрування Master з Agent.
 resource "aws_security_group_rule" "master_ssh_from_agent" {
   type                     = "ingress"
   from_port                = 22
@@ -146,7 +141,6 @@ resource "aws_security_group_rule" "master_ssh_from_agent" {
   description = "SSH from Jenkins Agent"
 }
 
-# Outbound traffic
 resource "aws_security_group_rule" "master_egress" {
   type              = "egress"
   from_port         = 0
@@ -173,7 +167,6 @@ resource "aws_security_group" "jenkins_agent_sg" {
   }
 }
 
-# SSH from user's IP
 resource "aws_security_group_rule" "agent_ssh_from_user" {
   type              = "ingress"
   from_port         = 22
@@ -185,8 +178,6 @@ resource "aws_security_group_rule" "agent_ssh_from_user" {
   description = "SSH access to Jenkins Agent"
 }
 
-# SSH from Jenkins Master
-# Це головне правило для Jenkins SSH launcher.
 resource "aws_security_group_rule" "agent_ssh_from_master" {
   type                     = "ingress"
   from_port                = 22
@@ -197,10 +188,6 @@ resource "aws_security_group_rule" "agent_ssh_from_master" {
 
   description = "Jenkins Master SSH access"
 }
-
-# ============================================================
-# TIKTOK CLONE FRONTEND
-# ============================================================
 
 resource "aws_security_group_rule" "agent_frontend" {
   type              = "ingress"
@@ -213,10 +200,6 @@ resource "aws_security_group_rule" "agent_frontend" {
   description = "TikTok Clone Frontend"
 }
 
-# ============================================================
-# TIKTOK CLONE BACKEND
-# ============================================================
-
 resource "aws_security_group_rule" "agent_backend" {
   type              = "ingress"
   from_port         = 8080
@@ -227,11 +210,6 @@ resource "aws_security_group_rule" "agent_backend" {
 
   description = "TikTok Clone Backend API"
 }
-
-# ============================================================
-# RABBITMQ MANAGEMENT
-# Optional, but useful for debugging
-# ============================================================
 
 resource "aws_security_group_rule" "agent_rabbitmq_management" {
   type              = "ingress"
@@ -244,11 +222,6 @@ resource "aws_security_group_rule" "agent_rabbitmq_management" {
   description = "RabbitMQ Management UI"
 }
 
-# ============================================================
-# POSTGRESQL
-# Optional external access
-# ============================================================
-
 resource "aws_security_group_rule" "agent_postgres" {
   type              = "ingress"
   from_port         = 5432
@@ -260,11 +233,6 @@ resource "aws_security_group_rule" "agent_postgres" {
   description = "PostgreSQL access"
 }
 
-# ============================================================
-# REDIS
-# Optional external access
-# ============================================================
-
 resource "aws_security_group_rule" "agent_redis" {
   type              = "ingress"
   from_port         = 6379
@@ -275,11 +243,6 @@ resource "aws_security_group_rule" "agent_redis" {
 
   description = "Redis access"
 }
-
-# ============================================================
-# ICMP
-# Useful for diagnostics
-# ============================================================
 
 resource "aws_security_group_rule" "agent_icmp" {
   type              = "ingress"
@@ -303,10 +266,6 @@ resource "aws_security_group_rule" "master_icmp" {
   description = "Ping Jenkins Master"
 }
 
-# ============================================================
-# AGENT OUTBOUND
-# ============================================================
-
 resource "aws_security_group_rule" "agent_egress" {
   type              = "egress"
   from_port         = 0
@@ -320,7 +279,6 @@ resource "aws_security_group_rule" "agent_egress" {
 
 # ============================================================
 # JENKINS AGENT EC2
-# Створюємо першим, тому що Master використовує його private IP
 # ============================================================
 
 resource "aws_instance" "jenkins_agent" {
@@ -345,9 +303,6 @@ resource "aws_instance" "jenkins_agent" {
     Name = "TikTok-Clone-Jenkins-Agent"
   }
 
-  # Without this, EC2 never re-runs user_data on an existing instance -
-  # fixes to install_jenkins_agent.sh would silently not apply unless the
-  # instance is replaced for some other reason.
   user_data_replace_on_change = true
 
   user_data = templatefile(
@@ -389,20 +344,19 @@ resource "aws_instance" "jenkins_master" {
   user_data = templatefile(
     "files/install_jenkins_master.sh",
     {
-      agent_ip             = aws_instance.jenkins_agent.private_ip
-      private_key_pem      = tls_private_key.jenkins_agent.private_key_pem
-      admin_password       = var.jenkins_admin_password
-      jwt_key              = var.jwt_key
-      google_client_id     = var.google_client_id
-      google_client_secret = var.google_client_secret
-      smtp_password        = var.smtp_password
+      agent_ip              = aws_instance.jenkins_agent.private_ip
+      private_key_pem       = tls_private_key.jenkins_agent.private_key_pem
+      admin_password        = var.jenkins_admin_password
+      jwt_key               = var.jwt_key
+      google_client_id      = var.google_client_id
+      google_client_secret  = var.google_client_secret
+      smtp_password         = var.smtp_password
+      dockerhub_username    = var.dockerhub_username
+      dockerhub_password    = var.dockerhub_password
     }
   )
 }
 
-# Stable public IP for the master: without this, every instance
-# replacement (e.g. from user_data_replace_on_change) hands out a new
-# random public IP and the Jenkins UI URL changes each time.
 resource "aws_eip" "jenkins_master" {
   domain   = "vpc"
   instance = aws_instance.jenkins_master.id
@@ -440,5 +394,4 @@ output "jenkins_url" {
   value       = "http://${aws_eip.jenkins_master.public_ip}:8080"
   description = "Jenkins Web UI"
 }
-
 

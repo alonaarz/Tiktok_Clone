@@ -153,6 +153,63 @@ pipeline {
 
 
         // ====================================================
+        // DOCKER HUB LOGIN
+        // ====================================================
+
+        stage("Docker Hub login") {
+
+            steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKERHUB_USERNAME',
+                        passwordVariable: 'DOCKERHUB_PASSWORD'
+                    )
+                ]) {
+
+                    sh '''
+                        set -e
+
+                        echo "${DOCKERHUB_PASSWORD}" | \
+                          docker login \
+                            -u "${DOCKERHUB_USERNAME}" \
+                            --password-stdin
+                    '''
+                }
+            }
+        }
+
+
+        // ====================================================
+        // PUSH IMAGES
+        // ====================================================
+
+        stage("Push images to Docker Hub") {
+
+            steps {
+
+                sh '''
+                    set -e
+
+                    echo "=============================================="
+                    echo "Pushing images to Docker Hub"
+                    echo "=============================================="
+
+                    docker push "${IMAGE_NAME_FRONT}:${BUILD_NUMBER}"
+                    docker push "${IMAGE_NAME_FRONT}:latest"
+
+                    docker push "${IMAGE_NAME_BACK}:${BUILD_NUMBER}"
+                    docker push "${IMAGE_NAME_BACK}:latest"
+
+                    docker push "${IMAGE_NAME_VIDEO_PROCESSOR}:${BUILD_NUMBER}"
+                    docker push "${IMAGE_NAME_VIDEO_PROCESSOR}:latest"
+                '''
+            }
+        }
+
+
+        // ====================================================
         // DEPLOY
         // ====================================================
 
@@ -243,6 +300,8 @@ pipeline {
                     echo "Cleaning unused Docker images..."
 
                     docker image prune -f
+
+                    docker logout
                 '''
             }
         }
@@ -272,3 +331,4 @@ pipeline {
         }
     }
 }
+

@@ -87,6 +87,14 @@ sudo tee /var/lib/jenkins/casc-secrets/smtp-password > /dev/null <<'SMTPEOF'
 ${smtp_password}
 SMTPEOF
 
+sudo tee /var/lib/jenkins/casc-secrets/dockerhub-username > /dev/null <<'DHUEOF'
+${dockerhub_username}
+DHUEOF
+
+sudo tee /var/lib/jenkins/casc-secrets/dockerhub-password > /dev/null <<'DHPEOF'
+${dockerhub_password}
+DHPEOF
+
 sudo chmod 600 /var/lib/jenkins/casc-secrets/*
 
 sudo chown -R \
@@ -207,6 +215,18 @@ credentials:
 
               description: "SMTP password"
 
+          - usernamePassword:
+
+              scope: GLOBAL
+
+              id: "dockerhub-credentials"
+
+              username: "$${dockerhub-username}"
+
+              password: "$${dockerhub-password}"
+
+              description: "Docker Hub credentials"
+
 
 jobs:
 
@@ -312,3 +332,4 @@ echo "=============================================="
 echo "Jenkins Master installation complete"
 echo "Agent IP: ${agent_ip}"
 echo "=============================================="
+
